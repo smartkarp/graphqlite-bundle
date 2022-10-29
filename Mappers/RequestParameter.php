@@ -18,7 +18,7 @@ class RequestParameter implements ParameterInterface
      *
      * @return mixed
      */
-    public function resolve(?object $source, array $args, $context, ResolveInfo $info)
+    public function resolve(?object $source, array $args, $context, ResolveInfo $info): mixed
     {
         if (!$context instanceof SymfonyRequestContextInterface) {
             throw new GraphQLException('Cannot type-hint on a Symfony Request object in your query/mutation/field. The request context must implement SymfonyRequestContextInterface.');
