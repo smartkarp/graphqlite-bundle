@@ -55,13 +55,13 @@ use function strpos;
  */
 class GraphQLiteCompilerPass implements CompilerPassInterface
 {
-    private AnnotationReader $annotationReader;
+    private ?AnnotationReader $annotationReader = null;
 
-    private CacheInterface $cache;
+    private ?CacheInterface $cache = null;
 
     private string $cacheDir;
 
-    private ClassBoundCacheContractInterface $codeCache;
+    private ?ClassBoundCacheContractInterface $codeCache = null;
 
     private static function getParametersByName(ReflectionMethod $method): array
     {
