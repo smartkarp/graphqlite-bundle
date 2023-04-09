@@ -1,12 +1,11 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Types;
 
 use Symfony\Component\Security\Core\Role\Role;
+use Symfony\Component\Security\Core\User\UserInterface;
 use TheCodingMachine\GraphQLite\Annotations\Field;
 use TheCodingMachine\GraphQLite\Annotations\Type;
-use Symfony\Component\Security\Core\User\UserInterface;
 use TheCodingMachine\GraphQLite\FieldNotFoundException;
 
 /**
@@ -14,6 +13,25 @@ use TheCodingMachine\GraphQLite\FieldNotFoundException;
  */
 class SymfonyUserInterfaceType
 {
+    /**
+     * @Field()
+     * @return string[]
+     */
+    public function getRoles(UserInterface $user): array
+    {
+        $roles = [];
+        foreach ($user->getRoles() as $role) {
+            // @phpstan-ignore-next-line BC for Symfony 4
+            if (class_exists(Role::class) && $role instanceof Role) {
+                $role = $role->getRole();
+            }
+
+            $roles[] = $role;
+        }
+
+        return $roles;
+    }
+
     /**
      * @Field
      */
@@ -30,23 +48,5 @@ class SymfonyUserInterfaceType
         }
 
         throw FieldNotFoundException::missingField(UserInterface::class, 'userName');
-    }
-
-    /**
-     * @Field()
-     * @return string[]
-     */
-    public function getRoles(UserInterface $user): array
-    {
-        $roles = [];
-        foreach ($user->getRoles() as $role) {
-            // @phpstan-ignore-next-line BC for Symfony 4
-            if (class_exists(Role::class) && $role instanceof Role) {
-                $role = $role->getRole();
-            }
-
-            $roles[] = $role;
-        }
-        return $roles;
     }
 }

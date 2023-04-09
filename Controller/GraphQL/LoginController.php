@@ -1,6 +1,6 @@
 <?php
-namespace TheCodingMachine\GraphQLite\Bundle\Controller\GraphQL;
 
+namespace TheCodingMachine\GraphQLite\Bundle\Controller\GraphQL;
 
 use RuntimeException;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -17,39 +17,19 @@ use TheCodingMachine\GraphQLite\Annotations\Mutation;
 
 class LoginController
 {
-
-    /**
-     * @var UserProviderInterface
-     */
-    private $userProvider;
-    /**
-     * @var UserPasswordHasherInterface
-     */
-    private $passwordEncoder;
-    /**
-     * @var TokenStorageInterface
-     */
-    private $tokenStorage;
-    /**
-     * @var string
-     */
-    private $firewallName;
-    /**
-     * @var EventDispatcherInterface
-     */
-    private $eventDispatcher;
-
-    public function __construct(UserProviderInterface $userProvider, UserPasswordHasherInterface $passwordEncoder, TokenStorageInterface $tokenStorage, EventDispatcherInterface $eventDispatcher, string $firewallName)
-    {
-        $this->userProvider = $userProvider;
-        $this->passwordEncoder = $passwordEncoder;
-        $this->tokenStorage = $tokenStorage;
-        $this->firewallName = $firewallName;
-        $this->eventDispatcher = $eventDispatcher;
+    public function __construct(
+        private readonly UserProviderInterface       $userProvider,
+        private readonly UserPasswordHasherInterface $passwordEncoder,
+        private readonly TokenStorageInterface       $tokenStorage,
+        private readonly EventDispatcherInterface    $eventDispatcher,
+        private readonly string                      $firewallName
+    ) {
     }
 
     /**
      * @Mutation()
+     *
+     * @throws InvalidUserPasswordException
      */
     public function login(string $userName, string $password, Request $request): UserInterface
     {
@@ -61,7 +41,7 @@ class LoginController
         }
 
         if (!$user instanceof PasswordAuthenticatedUserInterface) {
-            throw new RuntimeException('$user has to implements ' . PasswordAuthenticatedUserInterface::class);
+            throw new RuntimeException('$user has to implements '.PasswordAuthenticatedUserInterface::class);
         }
 
         if (!$this->passwordEncoder->isPasswordValid($user, $password)) {

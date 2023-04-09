@@ -1,37 +1,27 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\DependencyInjection;
 
+use Doctrine\Common\Annotations\AnnotationReader as DoctrineAnnotationReader;
 use Doctrine\Common\Annotations\PsrCachedReader;
 use GraphQL\Server\ServerConfig;
 use GraphQL\Validator\Rules\DisableIntrospection;
 use GraphQL\Validator\Rules\QueryComplexity;
 use GraphQL\Validator\Rules\QueryDepth;
+use Mouf\Composer\ClassNameMapper;
+use Psr\SimpleCache\CacheInterface;
+use ReflectionClass;
+use ReflectionMethod;
 use ReflectionNamedType;
+use RuntimeException;
 use Symfony\Component\Cache\Adapter\ApcuAdapter;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Symfony\Component\Cache\Psr16Cache;
-use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
-use TheCodingMachine\GraphQLite\Mappers\StaticClassListTypeMapperFactory;
-use Webmozart\Assert\Assert;
-use function class_exists;
-use Doctrine\Common\Annotations\AnnotationReader as DoctrineAnnotationReader;
-use Doctrine\Common\Annotations\AnnotationRegistry;
-use Mouf\Composer\ClassNameMapper;
-use Psr\SimpleCache\CacheInterface;
-use ReflectionParameter;
-use function filter_var;
-use function function_exists;
-use ReflectionClass;
-use ReflectionMethod;
-use function ini_get;
-use function interface_exists;
-use function strpos;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorageInterface;
 use Symfony\Component\Security\Core\User\UserInterface;
 use TheCodingMachine\CacheUtils\ClassBoundCache;
@@ -48,25 +38,40 @@ use TheCodingMachine\GraphQLite\Annotations\Mutation;
 use TheCodingMachine\GraphQLite\Annotations\Query;
 use TheCodingMachine\GraphQLite\Bundle\Controller\GraphQL\LoginController;
 use TheCodingMachine\GraphQLite\Bundle\Controller\GraphQL\MeController;
+use TheCodingMachine\GraphQLite\Bundle\Types\SymfonyUserInterfaceType;
 use TheCodingMachine\GraphQLite\GraphQLRuntimeException as GraphQLException;
+use TheCodingMachine\GraphQLite\Mappers\StaticClassListTypeMapperFactory;
 use TheCodingMachine\GraphQLite\Mappers\StaticTypeMapper;
 use TheCodingMachine\GraphQLite\SchemaFactory;
-use TheCodingMachine\GraphQLite\Bundle\Types\SymfonyUserInterfaceType;
+use Webmozart\Assert\Assert;
+use function class_exists;
+use function filter_var;
+use function ini_get;
+use function interface_exists;
+use function strpos;
 
 /**
  * Detects controllers and types automatically and tag them.
  */
 class GraphQLiteCompilerPass implements CompilerPassInterface
 {
-    /**
-     * @var AnnotationReader
-     */
-    private $annotationReader;
+    private AnnotationReader $annotationReader;
 
-    /**
-     * @var string
-     */
-    private $cacheDir;
+    private CacheInterface $cache;
+
+    private string $cacheDir;
+
+    private ClassBoundCacheContractInterface $codeCache;
+
+    private static function getParametersByName(ReflectionMethod $method): array
+    {
+        $parameters = [];
+        foreach ($method->getParameters() as $parameter) {
+            $parameters[$parameter->getName()] = $parameter;
+        }
+
+        return $parameters;
+    }
 
     /**
      * You can modify the container here before it is dumped to PHP code.
@@ -101,17 +106,20 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         }
 
         $disableLogin = false;
+
         if ($container->getParameter('graphqlite.security.enable_login') === 'auto'
-         && (!$container->has($firewallConfigServiceName) ||
+            && (!$container->has($firewallConfigServiceName) ||
                 !$container->has(UserPasswordHasherInterface::class) ||
                 !$container->has(TokenStorageInterface::class) ||
                 !$container->has('session.factory')
             )) {
             $disableLogin = true;
         }
+
         if ($container->getParameter('graphqlite.security.enable_login') === 'off') {
             $disableLogin = true;
         }
+
         // If the security is disabled, let's remove the LoginController
         if ($disableLogin === true) {
             $container->removeDefinition(LoginController::class);
@@ -119,19 +127,25 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
 
         if ($container->getParameter('graphqlite.security.enable_login') === 'on') {
             if (!$container->has('session.factory')) {
-                throw new GraphQLException('In order to enable the login/logout mutations (via the graphqlite.security.enable_login parameter), you need to enable session support (via the "framework.session.enabled" config parameter).');
+                throw new GraphQLException(
+                    'In order to enable the login/logout mutations (via the graphqlite.security.enable_login parameter), you need to enable session support (via the "framework.session.enabled" config parameter).'
+                );
             }
-            if (!$container->has(UserPasswordHasherInterface::class) || !$container->has(TokenStorageInterface::class) || !$container->has($firewallConfigServiceName)) {
-                throw new GraphQLException('In order to enable the login/logout mutations (via the graphqlite.security.enable_login parameter), you need to install the security bundle. Please be sure to correctly configure the user provider (in the security.providers configuration settings)');
+
+            if (!$container->has(UserPasswordHasherInterface::class)
+                || !$container->has(TokenStorageInterface::class)
+                || !$container->has($firewallConfigServiceName)
+            ) {
+                throw new GraphQLException(
+                    'In order to enable the login/logout mutations (via the graphqlite.security.enable_login parameter), you need to install the security bundle. Please be sure to correctly configure the user provider (in the security.providers configuration settings)'
+                );
             }
         }
 
         if ($disableLogin === false) {
             // Let's do some dark magic. We need the user provider. We need its name. It is stored in the "config" object.
             $provider = $container->findDefinition('security.firewall.map.config.'.$firewallName)->getArgument(5);
-
             $container->findDefinition(LoginController::class)->setArgument(0, new Reference($provider));
-
             $this->registerController(LoginController::class, $container);
         }
 
@@ -140,9 +154,11 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             && !$container->has(TokenStorageInterface::class)) {
             $disableMe = true;
         }
+
         if ($container->getParameter('graphqlite.security.enable_me') === 'off') {
             $disableMe = true;
         }
+
         // If the security is disabled, let's remove the LoginController
         if ($disableMe === true) {
             $container->removeDefinition(MeController::class);
@@ -150,7 +166,9 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
 
         if ($container->getParameter('graphqlite.security.enable_me') === 'on') {
             if (!$container->has(TokenStorageInterface::class)) {
-                throw new GraphQLException('In order to enable the "me" query (via the graphqlite.security.enable_me parameter), you need to install the security bundle.');
+                throw new GraphQLException(
+                    'In order to enable the "me" query (via the graphqlite.security.enable_me parameter), you need to install the security bundle.'
+                );
             }
         }
 
@@ -158,14 +176,14 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         $serverConfigDefinition = $container->findDefinition(ServerConfig::class);
         $rulesDefinition = [];
         if ($container->getParameter('graphqlite.security.introspection') === false) {
-            $rulesDefinition[] =  $container->findDefinition(DisableIntrospection::class);
+            $rulesDefinition[] = $container->findDefinition(DisableIntrospection::class);
         }
 
         $complexity = $container->getParameter('graphqlite.security.maximum_query_complexity');
         if ($complexity) {
             Assert::integerish($complexity);
 
-            $rulesDefinition[] =  $container->findDefinition(QueryComplexity::class)
+            $rulesDefinition[] = $container->findDefinition(QueryComplexity::class)
                 ->setArgument(0, (int) $complexity);
         }
 
@@ -173,7 +191,7 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         if ($depth) {
             Assert::integerish($depth);
 
-            $rulesDefinition[] =  $container->findDefinition(QueryDepth::class)
+            $rulesDefinition[] = $container->findDefinition(QueryDepth::class)
                 ->setArgument(0, (int) $depth);
         }
 
@@ -199,15 +217,16 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             if ($definition->isAbstract() || $definition->getClass() === null) {
                 continue;
             }
+
             /**
              * @var class-string $class
              */
             $class = $definition->getClass();
-/*            foreach ($controllersNamespaces as $controllersNamespace) {
-                if (strpos($class, $controllersNamespace) === 0) {
-                    $definition->addTag('graphql.annotated.controller');
-                }
-            }*/
+            /*            foreach ($controllersNamespaces as $controllersNamespace) {
+                            if (strpos($class, $controllersNamespace) === 0) {
+                                $definition->addTag('graphql.annotated.controller');
+                            }
+                        }*/
 
             foreach ($typesNamespaces as $typesNamespace) {
                 if (strpos($class, $typesNamespace) === 0) {
@@ -215,14 +234,20 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
                     // Set the types public
                     $reflectionClass = new ReflectionClass($class);
                     $typeAnnotation = $this->getAnnotationReader()->getTypeAnnotation($reflectionClass);
+
                     if ($typeAnnotation !== null && $typeAnnotation->isSelfType()) {
                         continue;
                     }
-                    if ($typeAnnotation !== null || $this->getAnnotationReader()->getExtendTypeAnnotation($reflectionClass) !== null) {
+
+                    if ($typeAnnotation !== null
+                        || $this->getAnnotationReader()->getExtendTypeAnnotation($reflectionClass) !== null
+                    ) {
                         $definition->setPublic(true);
                     }
+
                     foreach ($reflectionClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
                         $factory = $reader->getFactoryAnnotation($method);
+
                         if ($factory !== null) {
                             $definition->setPublic(true);
                         }
@@ -232,14 +257,16 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         }
 
         foreach ($controllersNamespaces as $controllersNamespace) {
-            $schemaFactory->addMethodCall('addControllerNamespace', [ $controllersNamespace ]);
+            $schemaFactory->addMethodCall('addControllerNamespace', [$controllersNamespace]);
+
             foreach ($this->getClassList($controllersNamespace) as $className => $refClass) {
                 $this->makePublicInjectedServices($refClass, $reader, $container, true);
             }
         }
 
         foreach ($typesNamespaces as $typeNamespace) {
-            $schemaFactory->addMethodCall('addTypeNamespace', [ $typeNamespace ]);
+            $schemaFactory->addMethodCall('addTypeNamespace', [$typeNamespace]);
+
             foreach ($this->getClassList($typeNamespace) as $className => $refClass) {
                 $this->makePublicInjectedServices($refClass, $reader, $container, false);
             }
@@ -254,9 +281,17 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             foreach ($tags as $attributes) {
                 if (isset($attributes["class"])) {
                     $phpClass = $attributes["class"];
+
                     if (!class_exists($phpClass)) {
-                        throw new \RuntimeException(sprintf('The class attribute of the graphql.output_type annotation of the %s service must point to an existing PHP class. Value passed: %s', $id, $phpClass));
+                        throw new RuntimeException(
+                            sprintf(
+                                'The class attribute of the graphql.output_type annotation of the %s service must point to an existing PHP class. Value passed: %s',
+                                $id,
+                                $phpClass
+                            )
+                        );
                     }
+
                     $customTypes[$phpClass] = new Reference($id);
                 } else {
                     $customNotMappedTypes[] = new Reference($id);
@@ -268,6 +303,7 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             $definition = $container->getDefinition(StaticTypeMapper::class);
             $definition->addMethodCall('setTypes', [$customTypes]);
         }
+
         if (!empty($customNotMappedTypes)) {
             $definition = $container->getDefinition(StaticTypeMapper::class);
             $definition->addMethodCall('setNotMappedTypes', [$customNotMappedTypes]);
@@ -276,81 +312,105 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         // Register graphql.queryprovider
         $this->mapAdderToTag('graphql.queryprovider', 'addQueryProvider', $container, $schemaFactory);
         $this->mapAdderToTag('graphql.queryprovider_factory', 'addQueryProviderFactory', $container, $schemaFactory);
-        $this->mapAdderToTag('graphql.root_type_mapper_factory', 'addRootTypeMapperFactory', $container, $schemaFactory);
+        $this->mapAdderToTag(
+            'graphql.root_type_mapper_factory',
+            'addRootTypeMapperFactory',
+            $container,
+            $schemaFactory
+        );
         $this->mapAdderToTag('graphql.parameter_middleware', 'addParameterMiddleware', $container, $schemaFactory);
         $this->mapAdderToTag('graphql.field_middleware', 'addFieldMiddleware', $container, $schemaFactory);
         $this->mapAdderToTag('graphql.type_mapper', 'addTypeMapper', $container, $schemaFactory);
         $this->mapAdderToTag('graphql.type_mapper_factory', 'addTypeMapperFactory', $container, $schemaFactory);
 
         // Configure cache
-        if (ApcuAdapter::isSupported() && (PHP_SAPI !== 'cli' || filter_var(ini_get('apc.enable_cli'), FILTER_VALIDATE_BOOLEAN))) {
+        if (ApcuAdapter::isSupported()
+            && (PHP_SAPI !== 'cli' || filter_var(ini_get('apc.enable_cli'), FILTER_VALIDATE_BOOLEAN))
+        ) {
             $container->setAlias('graphqlite.cache', 'graphqlite.apcucache');
         } else {
             $container->setAlias('graphqlite.cache', 'graphqlite.phpfilescache');
         }
     }
 
-    private function registerController(string $controllerClassName, ContainerBuilder $container): void
-    {
-        $aggregateQueryProvider = $container->findDefinition(AggregateControllerQueryProviderFactory::class);
-        $controllersList = $aggregateQueryProvider->getArgument(0);
-        $controllersList[] = $controllerClassName;
-        $aggregateQueryProvider->setArgument(0, $controllersList);
-    }
-
     /**
-     * Register a method call on SchemaFactory for each tagged service, passing the service in parameter.
-     *
-     * @param string $tag
-     * @param string $methodName
+     * Returns a cached Doctrine annotation reader.
+     * Note: we cannot get the annotation reader service in the container as we are in a compiler pass.
      */
-    private function mapAdderToTag(string $tag, string $methodName, ContainerBuilder $container, Definition $schemaFactory): void
+    private function getAnnotationReader(): AnnotationReader
     {
-        $taggedServices = $container->findTaggedServiceIds($tag);
+        if ($this->annotationReader === null) {
+            $doctrineAnnotationReader = new DoctrineAnnotationReader();
 
-        foreach ($taggedServices as $id => $tags) {
-            $schemaFactory->addMethodCall($methodName, [new Reference($id)]);
+            if (ApcuAdapter::isSupported()) {
+                $doctrineAnnotationReader = new PsrCachedReader(
+                    $doctrineAnnotationReader,
+                    new ApcuAdapter('graphqlite'),
+                    true
+                );
+            }
+
+            $this->annotationReader = new AnnotationReader($doctrineAnnotationReader, AnnotationReader::LAX_MODE);
         }
+
+        return $this->annotationReader;
     }
 
     /**
-     * @param ReflectionClass<object> $refClass
+     * Returns the array of globbed classes.
+     * Only instantiable classes are returned.
+     *
+     * @return array<string,ReflectionClass<object>> Key: fully qualified class name
      */
-    private function makePublicInjectedServices(ReflectionClass $refClass, AnnotationReader $reader, ContainerBuilder $container, bool $isController): void
+    private function getClassList(string $namespace, int $globTtl = 2, bool $recursive = true): array
     {
-        $services = $this->getCodeCache()->get($refClass, function() use ($refClass, $reader, $container, $isController): array {
-            $services = [];
-            foreach ($refClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-                $field = $reader->getRequestAnnotation($method, Field::class) ?? $reader->getRequestAnnotation($method, Query::class) ?? $reader->getRequestAnnotation($method, Mutation::class);
-                if ($field !== null) {
-                    if ($isController) {
-                        $services[$refClass->getName()] = $refClass->getName();
-                    }
-                    $services += $this->getListOfInjectedServices($method, $container);
-                    if ($field instanceof Field && $field->getPrefetchMethod() !== null) {
-                        $services += $this->getListOfInjectedServices($refClass->getMethod($field->getPrefetchMethod()), $container);
-                    }
+        $explorer = new GlobClassExplorer(
+            $namespace,
+            $this->getPsr16Cache(),
+            $globTtl,
+            ClassNameMapper::createFromComposerFile(null, null, true),
+            $recursive
+        );
+        $allClasses = $explorer->getClassMap();
+        $classes = [];
+
+        foreach ($allClasses as $className => $phpFile) {
+            if (!class_exists($className, false)) {
+                // Let's try to load the file if it was not imported yet.
+                // We are importing the file manually to avoid triggering the autoloader.
+                // The autoloader might trigger errors if the file does not respect PSR-4 or if the
+                // Symfony DebugAutoLoader is installed. (see https://github.com/thecodingmachine/graphqlite/issues/216)
+                require_once $phpFile;
+
+                // @phpstan-ignore-next-line Does it exist now?
+                if (!class_exists($className, false)) {
+                    continue;
                 }
             }
 
-            return $services;
-        });
+            $refClass = new ReflectionClass($className);
 
-        foreach ($services as $service) {
-            if ($container->hasAlias($service)) {
-                $container->getAlias($service)->setPublic(true);
-            } else {
-                $container->getDefinition($service)->setPublic(true);
+            if (!$refClass->isInstantiable()) {
+                continue;
             }
+
+            $classes[$className] = $refClass;
         }
 
+        return $classes;
     }
 
-    /**
-     * @param ReflectionMethod $method
-     * @param ContainerBuilder $container
-     * @return array<string, string> key = value = service name
-     */
+    private function getCodeCache(): ClassBoundCacheContractInterface
+    {
+        if ($this->codeCache === null) {
+            $this->codeCache = new ClassBoundCacheContract(
+                new ClassBoundMemoryAdapter(new ClassBoundCache(new FileBoundCache($this->getPsr16Cache())))
+            );
+        }
+
+        return $this->codeCache;
+    }
+
     private function getListOfInjectedServices(ReflectionMethod $method, ContainerBuilder $container): array
     {
         $services = [];
@@ -370,7 +430,10 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             }
 
             if (!isset($parametersByName[$target])) {
-                throw new GraphQLException('In method '.$method->getDeclaringClass()->getName().'::'.$method->getName().', the @Autowire annotation refers to a non existing parameter named "'.$target.'"');
+                throw new GraphQLException(
+                    'In method '.$method->getDeclaringClass()->getName().'::'.$method->getName(
+                    ).', the @Autowire annotation refers to a non existing parameter named "'.$target.'"'
+                );
             }
 
             $id = $autowire->getIdentifier();
@@ -379,8 +442,10 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
             } else {
                 $parameter = $parametersByName[$target];
                 $type = $parameter->getType();
+
                 if ($type !== null && $type instanceof ReflectionNamedType) {
                     $fqcn = $type->getName();
+
                     if ($container->has($fqcn)) {
                         $services[$fqcn] = $fqcn;
                     }
@@ -391,44 +456,6 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
         return $services;
     }
 
-    /**
-     * @param ReflectionMethod $method
-     * @return array<string, ReflectionParameter>
-     */
-    private static function getParametersByName(ReflectionMethod $method): array
-    {
-        $parameters = [];
-        foreach ($method->getParameters() as $parameter) {
-            $parameters[$parameter->getName()] = $parameter;
-        }
-        return $parameters;
-    }
-
-    /**
-     * Returns a cached Doctrine annotation reader.
-     * Note: we cannot get the annotation reader service in the container as we are in a compiler pass.
-     */
-    private function getAnnotationReader(): AnnotationReader
-    {
-        if ($this->annotationReader === null) {
-            AnnotationRegistry::registerLoader('class_exists');
-
-            $doctrineAnnotationReader = new DoctrineAnnotationReader();
-
-            if (ApcuAdapter::isSupported()) {
-                $doctrineAnnotationReader = new PsrCachedReader($doctrineAnnotationReader, new ApcuAdapter('graphqlite'), true);
-            }
-
-            $this->annotationReader = new AnnotationReader($doctrineAnnotationReader, AnnotationReader::LAX_MODE);
-        }
-        return $this->annotationReader;
-    }
-
-    /**
-     * @var CacheInterface
-     */
-    private $cache;
-
     private function getPsr16Cache(): CacheInterface
     {
         if ($this->cache === null) {
@@ -438,54 +465,77 @@ class GraphQLiteCompilerPass implements CompilerPassInterface
                 $this->cache = new Psr16Cache(new PhpFilesAdapter('graphqlite_bundle', 0, $this->cacheDir));
             }
         }
+
         return $this->cache;
     }
 
-    /**
-     * @var ClassBoundCacheContractInterface
-     */
-    private $codeCache;
+    private function makePublicInjectedServices(
+        ReflectionClass  $refClass,
+        AnnotationReader $reader,
+        ContainerBuilder $container,
+        bool             $isController
+    ): void {
+        $services = $this->getCodeCache()->get(
+            $refClass,
 
-    private function getCodeCache(): ClassBoundCacheContractInterface
-    {
-        if ($this->codeCache === null) {
-            $this->codeCache = new ClassBoundCacheContract(new ClassBoundMemoryAdapter(new ClassBoundCache(new FileBoundCache($this->getPsr16Cache()))));
-        }
-        return $this->codeCache;
-    }
+            function () use ($refClass, $reader, $container, $isController): array {
+                $services = [];
 
-    /**
-     * Returns the array of globbed classes.
-     * Only instantiable classes are returned.
-     *
-     * @return array<string,ReflectionClass<object>> Key: fully qualified class name
-     */
-    private function getClassList(string $namespace, int $globTtl = 2, bool $recursive = true): array
-    {
-        $explorer = new GlobClassExplorer($namespace, $this->getPsr16Cache(), $globTtl, ClassNameMapper::createFromComposerFile(null, null, true), $recursive);
-        $allClasses = $explorer->getClassMap();
-        $classes = [];
-        foreach ($allClasses as $className => $phpFile) {
-            if (! class_exists($className, false)) {
-                // Let's try to load the file if it was not imported yet.
-                // We are importing the file manually to avoid triggering the autoloader.
-                // The autoloader might trigger errors if the file does not respect PSR-4 or if the
-                // Symfony DebugAutoLoader is installed. (see https://github.com/thecodingmachine/graphqlite/issues/216)
-                require_once $phpFile;
-                // @phpstan-ignore-next-line Does it exist now?
-                if (! class_exists($className, false)) {
-                    continue;
+                foreach ($refClass->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                    $field = $reader->getRequestAnnotation($method, Field::class)
+                        ?? $reader->getRequestAnnotation($method, Query::class)
+                        ?? $reader->getRequestAnnotation($method, Mutation::class);
+
+                    if ($field !== null) {
+                        if ($isController) {
+                            $services[$refClass->getName()] = $refClass->getName();
+                        }
+
+                        $services += $this->getListOfInjectedServices($method, $container);
+
+                        if ($field instanceof Field && $field->getPrefetchMethod() !== null) {
+                            $services += $this->getListOfInjectedServices(
+                                $refClass->getMethod($field->getPrefetchMethod()),
+                                $container
+                            );
+                        }
+                    }
                 }
-            }
 
-            $refClass = new ReflectionClass($className);
-            if (! $refClass->isInstantiable()) {
-                continue;
+                return $services;
             }
-            $classes[$className] = $refClass;
+        );
+
+        foreach ($services as $service) {
+            if ($container->hasAlias($service)) {
+                $container->getAlias($service)->setPublic(true);
+            } else {
+                $container->getDefinition($service)->setPublic(true);
+            }
         }
-
-        return $classes;
     }
 
+    /**
+     * Register a method call on SchemaFactory for each tagged service, passing the service in parameter.
+     */
+    private function mapAdderToTag(
+        string           $tag,
+        string           $methodName,
+        ContainerBuilder $container,
+        Definition       $schemaFactory
+    ): void {
+        $taggedServices = $container->findTaggedServiceIds($tag);
+
+        foreach ($taggedServices as $id => $tags) {
+            $schemaFactory->addMethodCall($methodName, [new Reference($id)]);
+        }
+    }
+
+    private function registerController(string $controllerClassName, ContainerBuilder $container): void
+    {
+        $aggregateQueryProvider = $container->findDefinition(AggregateControllerQueryProviderFactory::class);
+        $controllersList = $aggregateQueryProvider->getArgument(0);
+        $controllersList[] = $controllerClassName;
+        $aggregateQueryProvider->setArgument(0, $controllersList);
+    }
 }

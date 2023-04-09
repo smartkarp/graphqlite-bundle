@@ -1,8 +1,6 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests;
-
 
 use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
@@ -11,8 +9,8 @@ use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Kernel;
-use TheCodingMachine\GraphQLite\Bundle\GraphQLiteBundle;
 use Symfony\Component\Security\Core\User\InMemoryUser;
+use TheCodingMachine\GraphQLite\Bundle\GraphQLiteBundle;
 use function class_exists;
 use function serialize;
 
@@ -21,114 +19,59 @@ class GraphQLiteTestingKernel extends Kernel implements CompilerPassInterface
     use MicroKernelTrait;
 
     const CONFIG_EXTS = '.{php,xml,yaml,yml}';
-    /**
-     * @var bool
-     */
-    private $enableSession;
-    /**
-     * @var string
-     */
-    private $enableLogin;
-    /**
-     * @var bool
-     */
-    private $enableSecurity;
-    /**
-     * @var string|null
-     */
-    private $enableMe;
-    /**
-     * @var bool
-     */
-    private $introspection;
-    /**
-     * @var int|null
-     */
-    private $maximumQueryComplexity;
-    /**
-     * @var int|null
-     */
-    private $maximumQueryDepth;
-    /**
-     * @var array|string[]
-     */
-    private $controllersNamespace;
-    /**
-     * @var array|string[]
-     */
-    private $typesNamespace;
 
-    /**
-     * @param string[] $controllersNamespace
-     * @param string[] $typesNamespace
-     */
-    public function __construct(bool $enableSession = true,
-                                ?string $enableLogin = null,
-                                bool $enableSecurity = true,
-                                ?string $enableMe = null,
-                                bool $introspection = true,
-                                ?int $maximumQueryComplexity = null,
-                                ?int $maximumQueryDepth = null,
-                                array $controllersNamespace = ['TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Controller\\'],
-                                array $typesNamespace = ['TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Types\\', 'TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Entities\\'])
-    {
+    public function __construct(
+        private readonly bool    $enableSession = true,
+        private readonly ?string $enableLogin = null,
+        private readonly bool    $enableSecurity = true,
+        private readonly ?string $enableMe = null,
+        private readonly bool    $introspection = true,
+        private readonly ?int    $maximumQueryComplexity = null,
+        private readonly ?int    $maximumQueryDepth = null,
+        private readonly array   $controllersNamespace = ['TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Controller\\'],
+        private readonly array   $typesNamespace = [
+            'TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Types\\',
+            'TheCodingMachine\\GraphQLite\\Bundle\\Tests\\Fixtures\\Entities\\',
+        ]
+    ) {
         parent::__construct('test', true);
-        $this->enableSession = $enableSession;
-        $this->enableLogin = $enableLogin;
-        $this->enableSecurity = $enableSecurity;
-        $this->enableMe = $enableMe;
-        $this->introspection = $introspection;
-        $this->maximumQueryComplexity = $maximumQueryComplexity;
-        $this->maximumQueryDepth = $maximumQueryDepth;
-        $this->controllersNamespace = $controllersNamespace;
-        $this->typesNamespace = $typesNamespace;
     }
 
-    public function registerBundles(): iterable
+    public function configureContainer(ContainerBuilder $c, LoaderInterface $loader): void
     {
-        $bundles = [ new FrameworkBundle() ];
-        if (class_exists(SecurityBundle::class)) {
-            $bundles[] = new SecurityBundle();
-        }
-        $bundles[] = new GraphQLiteBundle();
-        return $bundles;
-    }
+        $loader->load(function (ContainerBuilder $container) {
+            $frameworkConf = [
+                'secret' => 'S0ME_SECRET',
+            ];
 
-    public function configureContainer(ContainerBuilder $c, LoaderInterface $loader)
-    {
-        $loader->load(function(ContainerBuilder $container) {
-            $frameworkConf = array(
-                'secret' => 'S0ME_SECRET'
-            );
-
-            $frameworkConf['cache'] =[
+            $frameworkConf['cache'] = [
                 'app' => 'cache.adapter.array',
             ];
 
-            $frameworkConf['router'] =[
+            $frameworkConf['router'] = [
                 'utf8' => true,
             ];
 
             if ($this->enableSession) {
-                $frameworkConf['session'] =[
-                    'enabled' => true,
+                $frameworkConf['session'] = [
+                    'enabled'            => true,
                     'storage_factory_id' => 'session.storage.factory.mock_file',
                 ];
             }
 
             $container->loadFromExtension('framework', $frameworkConf);
             if ($this->enableSecurity) {
-                $container->loadFromExtension('security', array(
+                $container->loadFromExtension('security', [
                     'enable_authenticator_manager' => true,
-                    'providers' => [
-                        'in_memory' => [
+                    'providers'                    => [
+                        'in_memory'       => [
                             'memory' => [
                                 'users' => [
                                     'foo' => [
                                         'password' => 'bar',
-                                        'roles' => 'ROLE_USER',
+                                        'roles'    => 'ROLE_USER',
                                     ],
-                               ],
+                                ],
                             ],
                         ],
                         'in_memory_other' => [
@@ -136,29 +79,29 @@ class GraphQLiteTestingKernel extends Kernel implements CompilerPassInterface
                                 'users' => [
                                     'foo' => [
                                         'password' => 'bar',
-                                        'roles' => 'ROLE_USER',
+                                        'roles'    => 'ROLE_USER',
                                     ],
                                 ],
                             ],
                         ],
                     ],
-                    'firewalls' => [
+                    'firewalls'                    => [
                         'main' => [
-                            'provider' => 'in_memory'
-                        ]
+                            'provider' => 'in_memory',
+                        ],
                     ],
-                    'password_hashers' => [
+                    'password_hashers'             => [
                         InMemoryUser::class => 'plaintext',
                     ],
-                ));
+                ]);
             }
 
-            $graphqliteConf = array(
+            $graphqliteConf = [
                 'namespace' => [
                     'controllers' => $this->controllersNamespace,
-                    'types' => $this->typesNamespace
+                    'types'       => $this->typesNamespace,
                 ],
-            );
+            ];
 
             if ($this->enableLogin) {
                 $graphqliteConf['security']['enable_login'] = $this->enableLogin;
@@ -190,21 +133,37 @@ class GraphQLiteTestingKernel extends Kernel implements CompilerPassInterface
         $loader->load($confDir.'/{services}_'.$this->environment.self::CONFIG_EXTS, 'glob');
     }
 
-    // Note: typing is disabled because using different classes in Symfony 4 and 5
-    protected function configureRoutes(/*RoutingConfigurator*/ $routes)
-    {
-        $routes->import(__DIR__.'/../Resources/config/routes.xml');
-    }
-
     public function getCacheDir(): string
     {
-        return __DIR__.'/../cache/'.($this->enableSession?'withSession':'withoutSession').$this->enableLogin.($this->enableSecurity?'withSecurity':'withoutSecurity').$this->enableMe.'_'.($this->introspection?'withIntrospection':'withoutIntrospection').'_'.$this->maximumQueryComplexity.'_'.$this->maximumQueryDepth.'_'.md5(serialize($this->controllersNamespace).'_'.md5(serialize($this->typesNamespace)));
+        return __DIR__.'/../cache/'.($this->enableSession ? 'withSession' : 'withoutSession').$this->enableLogin.($this->enableSecurity ? 'withSecurity' : 'withoutSecurity').$this->enableMe.'_'.($this->introspection ? 'withIntrospection' : 'withoutIntrospection').'_'.$this->maximumQueryComplexity.'_'.$this->maximumQueryDepth.'_'.md5(
+                serialize($this->controllersNamespace).'_'.md5(serialize($this->typesNamespace))
+            );
     }
+
+    // Note: typing is disabled because using different classes in Symfony 4 and 5
 
     public function process(ContainerBuilder $container): void
     {
         if ($container->hasDefinition('security.untracked_token_storage')) {
             $container->getDefinition('security.untracked_token_storage')->setPublic(true);
         }
+    }
+
+    public function registerBundles(): iterable
+    {
+        $bundles = [new FrameworkBundle()];
+
+        if (class_exists(SecurityBundle::class)) {
+            $bundles[] = new SecurityBundle();
+        }
+
+        $bundles[] = new GraphQLiteBundle();
+
+        return $bundles;
+    }
+
+    protected function configureRoutes(/*RoutingConfigurator*/ $routes): void
+    {
+        $routes->import(__DIR__.'/../Resources/config/routes.xml');
     }
 }

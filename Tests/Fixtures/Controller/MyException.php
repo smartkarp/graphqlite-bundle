@@ -1,26 +1,12 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Controller;
 
-
+use Exception;
 use GraphQL\Error\ClientAware;
 
-class MyException extends \Exception implements ClientAware
+class MyException extends Exception implements ClientAware
 {
-
-    /**
-     * Returns true when exception message is safe to be displayed to a client.
-     *
-     * @return bool
-     *
-     * @api
-     */
-    public function isClientSafe()
-    {
-        return true;
-    }
-
     /**
      * Returns string describing a category of the error.
      *
@@ -30,8 +16,20 @@ class MyException extends \Exception implements ClientAware
      *
      * @api
      */
-    public function getCategory()
+    public function getCategory(): string
     {
         return 'foobar';
+    }
+
+    /**
+     * Returns true when exception message is safe to be displayed to a client.
+     *
+     * @return bool
+     *
+     * @api
+     */
+    public function isClientSafe(): bool
+    {
+        return true;
     }
 }

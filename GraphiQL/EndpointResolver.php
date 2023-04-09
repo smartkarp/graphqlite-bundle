@@ -9,17 +9,12 @@ use Webmozart\Assert\Assert;
 
 final class EndpointResolver implements GraphiQLControllerEndpoint
 {
-    /**
-     * @var RequestStack
-     */
-    protected $requestStack;
-
-    public function __construct(RequestStack $requestStack)
-    {
-        $this->requestStack = $requestStack;
+    public function __construct(
+        private readonly RequestStack $requestStack
+    ) {
     }
 
-    public function getBySchema($name)
+    public function getBySchema($name): string
     {
         if ('default' === $name) {
             $request = $this->requestStack->getCurrentRequest();
@@ -31,7 +26,7 @@ final class EndpointResolver implements GraphiQLControllerEndpoint
         throw GraphQLEndpointInvalidSchemaException::forSchemaAndResolver($name, self::class);
     }
 
-    public function getDefault()
+    public function getDefault(): string
     {
         return $this->getBySchema('default');
     }

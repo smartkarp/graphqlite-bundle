@@ -1,28 +1,29 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Entities;
 
-
 use stdClass;
+use TheCodingMachine\GraphQLite\Annotations\Autowire;
 use TheCodingMachine\GraphQLite\Annotations\Field;
 use TheCodingMachine\GraphQLite\Annotations\Type;
 use TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Controller\TestGraphqlController;
-use TheCodingMachine\GraphQLite\Annotations\Autowire;
 
 /**
  * @Type()
  */
 class Contact
 {
-    /**
-     * @var string
-     */
-    private $name;
+    public function __construct(
+        private readonly string $name
+    ) {
+    }
 
-    public function __construct(string $name)
+    /**
+     * @Field()
+     */
+    public function getManager(): ?Contact
     {
-        $this->name = $name;
+        return null;
     }
 
     /**
@@ -38,13 +39,16 @@ class Contact
      * @Autowire(for="$testService")
      * @Autowire(for="$someService", identifier="someService")
      * @Autowire(for="$someAlias", identifier="someAlias")
-     * @return string
      */
-    public function injectService(TestGraphqlController $testService = null, stdClass $someService = null, stdClass $someAlias = null): string
-    {
+    public function injectService(
+        TestGraphqlController $testService = null,
+        stdClass              $someService = null,
+        stdClass              $someAlias = null
+    ): string {
         if (!$testService instanceof TestGraphqlController || $someService === null || $someAlias === null) {
             return 'KO';
         }
+
         return 'OK';
     }
 
@@ -59,19 +63,12 @@ class Contact
     /**
      * @Autowire(for="$someOtherService", identifier="someOtherService")
      */
-    public function prefetchData(iterable $iterable, stdClass $someOtherService = null)
+    public function prefetchData(iterable $iterable, stdClass $someOtherService = null): string
     {
         if ($someOtherService === null) {
             return 'KO';
         }
-        return 'OK';
-    }
 
-    /**
-     * @Field()
-     */
-    public function getManager(): ?Contact
-    {
-        return null;
+        return 'OK';
     }
 }

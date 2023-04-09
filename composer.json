@@ -1,25 +1,26 @@
 {
-  "name" : "thecodingmachine/graphqlite-bundle",
-  "description" : "A Symfony bundle for thecodingmachine/graphqlite.",
-  "keywords" : [
+  "name": "thecodingmachine/graphqlite-bundle",
+  "description": "A Symfony bundle for thecodingmachine/graphqlite.",
+  "keywords": [
     "graphql",
     "bundle",
     "symfony"
   ],
-  "homepage" : "https://github.com/thecodingmachine/graphqlite",
-  "type" : "symfony-bundle",
-  "license" : "MIT",
-  "authors" : [{
-    "name" : "David Négrier",
-    "email" : "d.negrier@thecodingmachine.com",
-    "homepage" : "http://mouf-php.com"
-  }
+  "homepage": "https://github.com/thecodingmachine/graphqlite",
+  "type": "symfony-bundle",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "David Négrier",
+      "email": "d.negrier@thecodingmachine.com",
+      "homepage": "http://mouf-php.com"
+    }
   ],
-  "require" : {
-    "php" : ">=7.4",
+  "require": {
+    "php": "^8.1",
     "ext-json": "*",
-    "thecodingmachine/graphqlite" : "^6.1",
-    "thecodingmachine/graphqlite-symfony-validator-bridge" : "^5.0",
+    "thecodingmachine/graphqlite": "^6.1",
+    "thecodingmachine/graphqlite-symfony-validator-bridge": "^5.0",
     "symfony/framework-bundle": "^5.4 || ^6",
     "symfony/validator": "^5.4 || ^6",
     "symfony/translation": "^5.4 || ^6",
@@ -55,9 +56,9 @@
   "suggest": {
     "symfony/security-bundle": "To use @Logged or @Right annotations"
   },
-  "autoload" : {
-    "psr-4" : {
-      "TheCodingMachine\\GraphQLite\\Bundle\\" : ""
+  "autoload": {
+    "psr-4": {
+      "TheCodingMachine\\GraphQLite\\Bundle\\": ""
     }
   },
   "extra": {

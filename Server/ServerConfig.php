@@ -1,6 +1,5 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Server;
 
 use GraphQL\Language\AST\DocumentNode;
@@ -11,7 +10,8 @@ use function array_merge;
 use function is_callable;
 
 /**
- * A slightly modified version of the server config: default validators are added by default when setValidators is called.
+ * A slightly modified version of the server config: default validators are added by default when setValidators is
+ * called.
  */
 class ServerConfig extends \GraphQL\Server\ServerConfig
 {
@@ -20,14 +20,16 @@ class ServerConfig extends \GraphQL\Server\ServerConfig
      *
      * @param ValidationRule[]|callable $validationRules
      *
-     * @return \GraphQL\Server\ServerConfig
-     *
      * @api
      */
-    public function setValidationRules($validationRules)
+    public function setValidationRules($validationRules): self
     {
         parent::setValidationRules(
-            function (OperationParams $params, DocumentNode $doc, string $operationType) use ($validationRules): array {
+            static function (
+                OperationParams $params,
+                DocumentNode    $doc,
+                string          $operationType
+            ) use ($validationRules): array {
                 $validationRules = is_callable($validationRules)
                     ? $validationRules($params, $doc, $operationType)
                     : $validationRules;
@@ -38,5 +40,4 @@ class ServerConfig extends \GraphQL\Server\ServerConfig
 
         return $this;
     }
-
 }

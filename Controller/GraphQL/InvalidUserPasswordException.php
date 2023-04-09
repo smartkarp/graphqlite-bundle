@@ -1,6 +1,5 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Controller\GraphQL;
 
 use Exception;

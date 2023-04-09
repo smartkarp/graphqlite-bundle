@@ -1,13 +1,11 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Types;
 
-use function strtoupper;
 use TheCodingMachine\GraphQLite\Annotations\ExtendType;
 use TheCodingMachine\GraphQLite\Annotations\Field;
 use TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Entities\Contact;
-
+use function strtoupper;
 
 /**
  * @ExtendType(class=Contact::class)

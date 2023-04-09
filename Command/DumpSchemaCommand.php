@@ -6,12 +6,14 @@ namespace TheCodingMachine\GraphQLite\Bundle\Command;
 
 use GraphQL\Type\Definition\TypeWithFields;
 use GraphQL\Utils\SchemaPrinter;
+use ReflectionProperty;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 use TheCodingMachine\GraphQLite\Schema;
+use function is_string;
 
 /**
  * Shamelessly stolen from Api Platform
@@ -20,15 +22,9 @@ class DumpSchemaCommand extends Command
 {
     protected static $defaultName = 'graphqlite:dump-schema';
 
-    /**
-     * @var Schema
-     */
-    private $schema;
-
-    public function __construct(Schema $schema)
-    {
-        $this->schema = $schema;
-
+    public function __construct(
+        private readonly Schema $schema
+    ) {
         parent::__construct();
     }
 
@@ -49,7 +45,7 @@ class DumpSchemaCommand extends Command
         $schemaExport = SchemaPrinter::doPrint($this->schema);
 
         $filename = $input->getOption('output');
-        if (\is_string($filename)) {
+        if (is_string($filename)) {
             file_put_contents($filename, $schemaExport);
             $io->success(sprintf('Data written to %s.', $filename));
         } else {
@@ -63,7 +59,7 @@ class DumpSchemaCommand extends Command
     {
         $config = $this->schema->getConfig();
 
-        $refl = new \ReflectionProperty(TypeWithFields::class, 'fields');
+        $refl = new ReflectionProperty(TypeWithFields::class, 'fields');
         $refl->setAccessible(true);
 
         if ($config->query) {

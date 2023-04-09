@@ -1,37 +1,20 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Entities;
-
 
 class Product
 {
-    /**
-     * @var string
-     */
-    private $name;
-    /**
-     * @var float
-     */
-    private $price;
-
-    public function __construct(string $name, float $price)
-    {
-        $this->name = $name;
-        $this->price = $price;
+    public function __construct(
+        private readonly string $name,
+        private readonly float  $price
+    ) {
     }
 
-    /**
-     * @return string
-     */
     public function getName(): string
     {
         return $this->name;
     }
 
-    /**
-     * @return float
-     */
     public function getPrice(): float
     {
         return $this->price;

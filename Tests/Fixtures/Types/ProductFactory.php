@@ -1,15 +1,12 @@
 <?php
 
-
 namespace TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Types;
 
 use TheCodingMachine\GraphQLite\Annotations\Factory;
 use TheCodingMachine\GraphQLite\Bundle\Tests\Fixtures\Entities\Product;
 
-
 class ProductFactory
 {
-
     /**
      * @Factory()
      */
