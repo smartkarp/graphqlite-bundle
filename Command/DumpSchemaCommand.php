@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace TheCodingMachine\GraphQLite\Bundle\Command;
 
-use GraphQL\Type\Definition\TypeWithFields;
+use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Utils\SchemaPrinter;
 use ReflectionProperty;
 use Symfony\Component\Console\Command\Command;
@@ -42,6 +42,16 @@ class DumpSchemaCommand extends Command
         // Trying to guarantee deterministic order
         $this->sortSchema();
 
+        $config = $this->schema->getConfig();
+        $typeLoader = $config->getTypeLoader();
+        $config->setTypeLoader(static function (string $name) use ($typeLoader) {
+            if ($name === 'Subscription') {
+                return null;
+            }
+
+            return $typeLoader($name);
+        });
+
         $schemaExport = SchemaPrinter::doPrint($this->schema);
 
         $filename = $input->getOption('output');
@@ -59,7 +69,7 @@ class DumpSchemaCommand extends Command
     {
         $config = $this->schema->getConfig();
 
-        $refl = new ReflectionProperty(TypeWithFields::class, 'fields');
+        $refl = new ReflectionProperty(ObjectType::class, 'fields');
         $refl->setAccessible(true);
 
         if ($config->query) {
